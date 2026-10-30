@@ -16,6 +16,7 @@ import {FOLDERS_FILE_UNREADABLE} from '@/utils/savedQueryFolders';
 
 const translateMock = vi.hoisted(() => (key: string) => key);
 const toastSpy = vi.hoisted(() => vi.fn());
+const downloadFileSpy = vi.hoisted(() => vi.fn());
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({t: translateMock}),
@@ -41,7 +42,7 @@ vi.mock('@/hooks/useSecondaryWindows', () => ({
     useSecondaryWindows: () => ({openSchemaDiagram: vi.fn()}),
 }));
 vi.mock('@/hooks/usePlatformCapabilities', () => ({
-    usePlatformCapabilities: () => ({chooseInputFile: vi.fn()}),
+    usePlatformCapabilities: () => ({chooseInputFile: vi.fn(), downloadFile: downloadFileSpy}),
 }));
 const sidebarClient = {call: (command: string, request: unknown) => invoke(command, request)};
 vi.mock('@/hooks/useTabularisClient', () => ({useTabularisClient: () => sidebarClient}));
@@ -1410,5 +1411,51 @@ describe('ExplorerSidebar — saved query actions', () => {
             expect(screen.getByText('Cleanup')).toBeTruthy();
             expect(screen.getByText('Report')).toBeTruthy();
         });
+    });
+
+    it('exports the shown history as a .sql file (#1307)', async () => {
+        vi.mocked(useQueryHistory).mockReturnValue({
+            entries: [
+                {
+                    id: 'h1',
+                    sql: 'SELECT 1',
+                    executedAt: '2026-10-27T09:14:02Z',
+                    executionTimeMs: 12,
+                    status: 'success',
+                    rowsAffected: null,
+                    error: null,
+                    database: null,
+                },
+            ],
+            isLoading: false,
+            deleteEntry: vi.fn(),
+            clearHistory: vi.fn(),
+            recoveryNotice: null,
+            dismissRecoveryNotice: vi.fn(),
+        } as unknown as ReturnType<typeof useQueryHistory>);
+        downloadFileSpy.mockReset().mockResolvedValue(true);
+        toastSpy.mockClear();
+        render(
+            <ExplorerSidebar
+                sidebarWidth={280}
+                startResize={vi.fn()}
+                onCollapse={vi.fn()}
+                sidebarTab="history"
+                onSidebarTabChange={vi.fn()}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', {name: 'sidebar.exportHistory'}));
+
+        await waitFor(() => expect(downloadFileSpy).toHaveBeenCalledOnce());
+        const request = downloadFileSpy.mock.calls[0][0];
+        expect(request.fileName).toMatch(/history_\d{4}-\d{2}-\d{2}\.sql$/);
+        expect(request.mimeType).toBe('application/sql');
+        expect(new TextDecoder().decode(request.contents)).toMatch(
+            /^-- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} · succeeded · 12 ms\nSELECT 1;\n$/,
+        );
+        await waitFor(() =>
+            expect(toastSpy).toHaveBeenCalledWith('sidebar.historyExported', {kind: 'success'}),
+        );
     });
 });

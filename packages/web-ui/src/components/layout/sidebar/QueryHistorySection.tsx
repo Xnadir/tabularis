@@ -2,6 +2,7 @@ import {useState, useMemo, useRef} from 'react';
 import {useTranslation} from 'react-i18next';
 import {
     Search,
+    Download,
     Trash2,
     Loader2,
     Database,
@@ -42,6 +43,8 @@ interface QueryHistorySectionProps {
     onDoubleClick: (entry: QueryHistoryEntry) => void;
     onContextMenu: (e: React.MouseEvent, entry: QueryHistoryEntry) => void;
     onClearAll: () => void;
+    /** Saves the entries currently shown (after search and filters), in display order. */
+    onExportHistory?: (entries: QueryHistoryEntry[]) => void;
 }
 
 const selectClassName =
@@ -120,6 +123,7 @@ export function QueryHistorySection({
     onDoubleClick,
     onContextMenu,
     onClearAll,
+    onExportHistory,
 }: QueryHistorySectionProps) {
     const {t} = useTranslation();
     const {settings} = useSettings();
@@ -174,6 +178,12 @@ export function QueryHistorySection({
     const groupedEntries = useMemo(
         () => groupByDate(filteredEntries, (e) => e.executedAt, settings.displayTimezone),
         [filteredEntries, settings.displayTimezone],
+    );
+
+    // Exactly what the list shows, in the order it shows it: the date groups, flattened.
+    const shownEntries = useMemo(
+        () => groupedEntries.flatMap(([, items]) => items),
+        [groupedEntries],
     );
 
     const formatDuration = (ms: number | null): string => {
@@ -315,6 +325,18 @@ export function QueryHistorySection({
                     />
                 </div>
                 {pauseToggleButton}
+                {onExportHistory && (
+                    <button
+                        type="button"
+                        onClick={() => onExportHistory(shownEntries)}
+                        disabled={shownEntries.length === 0}
+                        className="p-1 text-muted hover:text-primary transition-colors shrink-0 disabled:opacity-40 disabled:pointer-events-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                        title={t('sidebar.exportHistory')}
+                        aria-label={t('sidebar.exportHistory')}
+                    >
+                        <Download size={13} />
+                    </button>
+                )}
                 <button
                     type="button"
                     onClick={onClearAll}

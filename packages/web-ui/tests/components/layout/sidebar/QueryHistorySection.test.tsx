@@ -331,3 +331,58 @@ describe('QueryHistorySection custom date fields', () => {
         expect(fromField).not.toBe(toField);
     });
 });
+
+describe('QueryHistorySection export (#1307)', () => {
+    const failed: QueryHistoryEntry = {
+        ...entry,
+        id: 'failed',
+        sql: 'SELECT nme FROM users;',
+        executedAt: '2026-10-17T13:00:00.000Z',
+        status: 'error',
+        error: 'column "nme" does not exist',
+    };
+    const older: QueryHistoryEntry = {
+        ...entry,
+        id: 'older',
+        sql: 'SELECT 2;',
+        executedAt: '2026-10-16T08:00:00.000Z',
+    };
+    const exportButton = () => screen.getByRole('button', {name: 'sidebar.exportHistory'});
+
+    it('exports exactly the shown entries, in the order the list shows them', () => {
+        const onExportHistory = vi.fn();
+        const {container} = render(
+            <PausableSection entries={[failed, entry, older]} onExportHistory={onExportHistory} />,
+        );
+        const shown = [...container.querySelectorAll('pre')].map((el) => el.textContent);
+        expect(shown).toHaveLength(3);
+
+        fireEvent.click(exportButton());
+        expect(onExportHistory).toHaveBeenCalledOnce();
+        expect(onExportHistory.mock.calls[0][0].map((e: QueryHistoryEntry) => e.sql)).toEqual(
+            shown,
+        );
+
+        fireEvent.change(screen.getByPlaceholderText('sidebar.searchHistory'), {
+            target: {value: 'users'},
+        });
+        fireEvent.click(exportButton());
+        expect(onExportHistory.mock.calls[1][0]).toEqual([failed]);
+    });
+
+    it('disables Export when the filters leave nothing to show', () => {
+        const onExportHistory = vi.fn();
+        render(<PausableSection entries={[entry]} onExportHistory={onExportHistory} />);
+        fireEvent.change(screen.getByPlaceholderText('sidebar.searchHistory'), {
+            target: {value: 'no such query'},
+        });
+        expect(exportButton()).toBeDisabled();
+        fireEvent.click(exportButton());
+        expect(onExportHistory).not.toHaveBeenCalled();
+    });
+
+    it('shows no Export button without a handler', () => {
+        render(<PausableSection entries={[entry]} />);
+        expect(screen.queryByRole('button', {name: 'sidebar.exportHistory'})).toBeNull();
+    });
+});

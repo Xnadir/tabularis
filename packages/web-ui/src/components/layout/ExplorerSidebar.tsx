@@ -136,6 +136,9 @@ import {openEditor} from '@/utils/editorNavigation';
 import {useTabularisClient} from '@/hooks/useTabularisClient';
 import {useSecondaryWindows} from '@/hooks/useSecondaryWindows';
 import {usePlatformCapabilities} from '@/hooks/usePlatformCapabilities';
+import {downloadTextFile} from '@/utils/fileDownloads';
+import {buildExportFileName} from '@/utils/exportFileName';
+import {formatQueryHistoryAsSql} from '@/utils/queryHistoryExport';
 import type {ChosenInputFile} from '@/platform/capabilities';
 import {
     DEFAULT_CREATE_TABLE_TARGET,
@@ -268,6 +271,33 @@ export const ExplorerSidebar = ({
     } = useQueryHistory();
     const {showAlert} = useAlert();
     const {showToast} = useToast();
+
+    // Saves the History panel's shown entries (after search and filters, in display
+    // order) as a .sql file, on desktop and in the browser alike.
+    const exportHistory = useCallback(
+        async (entries: QueryHistoryEntry[]) => {
+            if (entries.length === 0) return;
+            try {
+                const downloaded = await downloadTextFile(platform, {
+                    fileName: buildExportFileName({
+                        tableName: `${activeConnectionName || 'query'}-history`,
+                        extension: 'sql',
+                    }),
+                    contents: formatQueryHistoryAsSql(entries, settings.displayTimezone),
+                    mimeType: 'application/sql',
+                    filters: [{name: 'SQL', extensions: ['sql']}],
+                });
+                if (!downloaded) return;
+                showToast(t('sidebar.historyExported', {count: entries.length}), {
+                    kind: 'success',
+                });
+            } catch (e) {
+                console.error('History export failed:', e);
+                showToast(t('sidebar.historyExportFailed'), {kind: 'error'});
+            }
+        },
+        [platform, activeConnectionName, settings.displayTimezone, showToast, t],
+    );
     const navigate = useNavigate();
     const objectNavigation = useDatabaseObjectNavigation(
         activeConnectionId,
@@ -1540,6 +1570,9 @@ export const ExplorerSidebar = ({
                                     );
                                 }}
                                 onClearAll={() => setHistoryClearConfirm(true)}
+                                onExportHistory={(entries) => {
+                                    void exportHistory(entries);
+                                }}
                             />
                         </div>
                     )}
